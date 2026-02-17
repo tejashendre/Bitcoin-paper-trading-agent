@@ -1,26 +1,26 @@
 import axios from "axios";
-import { env } from "./env";
+import { getEnv } from "./env";
 import { Logger } from "./logger";
 
 export class TelegramService {
-    private static readonly API_URL = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
-
-    // Escape special characters for MarkdownV2
+    // Escape special characters for Telegram MarkdownV2
     static escapeMarkdown(text: string): string {
         return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
     }
 
     static async sendAlert(message: string): Promise<void> {
         try {
-            await axios.post(this.API_URL, {
+            const env = getEnv();
+            const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
+            await axios.post(url, {
                 chat_id: env.TELEGRAM_CHAT_ID,
                 text: message,
                 parse_mode: "MarkdownV2",
             });
-            // await Logger.info("Telegram alert sent");
-        } catch (error) {
-            await Logger.error("Failed to send Telegram alert", { error: String(error) });
-            // Don't throw, just log. Notifications shouldn't crash the bot.
+        } catch (error: unknown) {
+            // Log but never throw — notifications should not crash the bot.
+            const msg = error instanceof Error ? error.message : String(error);
+            await Logger.error("Failed to send Telegram alert", { error: msg });
         }
     }
 
@@ -32,22 +32,18 @@ export class TelegramService {
         portfolioValue: number
     ) {
         const icon = action === "BUY" ? "🟢" : action === "SELL" ? "🔴" : "⚪";
-        const escapedAction = this.escapeMarkdown(action);
-        const escapedAmount = this.escapeMarkdown(amount.toFixed(6));
-        const escapedPrice = this.escapeMarkdown(`$${price.toLocaleString()}`);
-        const escapedReason = this.escapeMarkdown(reason);
-        const escapedValue = this.escapeMarkdown(`$${portfolioValue.toLocaleString()}`);
+        const esc = this.escapeMarkdown;
 
-        const message = `
-${icon} *${escapedAction} ALERT*
+        const message = [
+            `${icon} *${esc(action)} ALERT*`,
+            ``,
+            `*Price*: ${esc("$" + price.toLocaleString("en-US"))}`,
+            `*Amount*: ${esc(amount.toFixed(6))} BTC`,
+            `*Reason*: ${esc(reason)}`,
+            ``,
+            `*Portfolio Value*: ${esc("$" + portfolioValue.toLocaleString("en-US"))}`,
+        ].join("\n");
 
-*Price*: ${escapedPrice}
-*Amount*: ${escapedAmount} BTC
-*Reason*: ${escapedReason}
-
-*Portfolio Value*: ${escapedValue}
-    `;
-
-        await this.sendAlert(message.trim());
+        await this.sendAlert(message);
     }
 }

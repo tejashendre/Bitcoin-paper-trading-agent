@@ -1,13 +1,40 @@
-import { z } from "zod";
+// Lazy environment validation — only runs when getEnv() is called at RUNTIME,
+// never during next build. This prevents build crashes.
 
-const envSchema = z.object({
-    UPSTASH_REDIS_REST_URL: z.string().url(),
-    UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
-    PERPLEXITY_API_KEY: z.string().min(1),
-    TELEGRAM_BOT_TOKEN: z.string().min(1),
-    TELEGRAM_CHAT_ID: z.string().min(1),
-    CRON_SECRET: z.string().optional(), // Optional for local dev/testing
-    // Public vars (if any)
-});
+let cached: ReturnType<typeof validateEnv> | null = null;
 
-export const env = envSchema.parse(process.env);
+function validateEnv() {
+    const required = [
+        "UPSTASH_REDIS_REST_URL",
+        "UPSTASH_REDIS_REST_TOKEN",
+        "PERPLEXITY_API_KEY",
+        "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_CHAT_ID",
+    ] as const;
+
+    const env: Record<string, string> = {};
+
+    for (const key of required) {
+        const value = process.env[key];
+        if (!value) {
+            throw new Error(`Missing required environment variable: ${key}`);
+        }
+        env[key] = value;
+    }
+
+    return {
+        UPSTASH_REDIS_REST_URL: env.UPSTASH_REDIS_REST_URL,
+        UPSTASH_REDIS_REST_TOKEN: env.UPSTASH_REDIS_REST_TOKEN,
+        PERPLEXITY_API_KEY: env.PERPLEXITY_API_KEY,
+        TELEGRAM_BOT_TOKEN: env.TELEGRAM_BOT_TOKEN,
+        TELEGRAM_CHAT_ID: env.TELEGRAM_CHAT_ID,
+        CRON_SECRET: process.env.CRON_SECRET || "",
+    };
+}
+
+export function getEnv() {
+    if (!cached) {
+        cached = validateEnv();
+    }
+    return cached;
+}
