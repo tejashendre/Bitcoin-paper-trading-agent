@@ -1,113 +1,69 @@
-/**
- * Perplexity API – Bitcoin market analysis.
- * Uses model "sonar". Strips markdown code blocks before JSON.parse to avoid crashes.
- */
+import axios from "axios";
+import { env } from "./env";
+import { Logger } from "./logger";
 
-export interface MarketAnalysis {
-  price: number;
-  sentiment: number;
-  reason: string;
+export interface SentimentResult {
+    score: number; // 1-10
+    sentiment: "BULLISH" | "BEARISH" | "NEUTRAL";
+    reasoning: string;
 }
 
-const MARKDOWN_JSON_BLOCK = /^```(?:json)?\s*\n?([\s\S]*?)```\s*$/m;
+export class PerplexityService {
+    private static readonly API_URL = "https://api.perplexity.ai/chat/completions";
 
-function stripMarkdownCodeBlocks(raw: string): string {
-  const trimmed = raw.trim();
-  const match = trimmed.match(MARKDOWN_JSON_BLOCK);
-  if (match !== null && match[1] != null) {
-    return match[1].trim();
-  }
-  return trimmed.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
-}
+    static async analyzeSentiment(): Promise<SentimentResult> {
+        try {
+            await Logger.info("Fetching market sentiment from Perplexity...");
 
-function parseAnalysis(content: string): MarketAnalysis {
-  const cleaned = stripMarkdownCodeBlocks(content);
-  let data: unknown;
-  try {
-    data = JSON.parse(cleaned);
-  } catch (e) {
-    console.error("Failed to parse Perplexity JSON:", cleaned);
-    throw new Error(`Perplexity response is not valid JSON: ${e instanceof Error ? e.message : String(e)}`);
-  }
+            const response = await axios.post(
+                this.API_URL,
+                {
+                    model: "sonar-reasoning", // or sonar-pro, depending on availability
+                    messages: [
+                        {
+                            role: "system",
+                            content: `You are a crypto market analyst. Analyze the current Bitcoin market sentiment based on recent news.
+              Return a JSON object ONLY: { "score": number (1-10, 10 is very bullish), "sentiment": "BULLISH" | "BEARISH" | "NEUTRAL", "reasoning": "short summary" }.
+              Do not include markdown formatting.`
+                        },
+                        {
+                            role: "user",
+                            content: "What is the current Bitcoin market sentiment?"
+                        }
+                    ],
+                    temperature: 0.2
+                },
+                {
+                    headers: {
+                        Authorization: `Bearer ${env.PERPLEXITY_API_KEY}`,
+                        "Content-Type": "application/json"
+                    },
+                    timeout: 20000 // 20s timeout
+                }
+            );
 
-  if (data == null || typeof data !== "object" || Array.isArray(data)) {
-    throw new Error("Perplexity response is not a JSON object");
-  }
+            const content = response.data.choices[0]?.message?.content;
+            if (!content) throw new Error("Empty response from Perplexity");
 
-  const obj = data as Record<string, unknown>;
-  const price = typeof obj.price === "number" ? obj.price : Number(obj.price);
-  const sentiment = typeof obj.sentiment === "number" ? obj.sentiment : Number(obj.sentiment);
-  const reason = typeof obj.reason === "string" ? obj.reason : String(obj.reason ?? "No reason provided");
+            // Clean and parse JSON
+            const jsonStr = content.replace(/```json/g, "").replace(/```/g, "").trim();
+            const result = JSON.parse(jsonStr) as SentimentResult;
 
-  if (Number.isNaN(price) || price <= 0) {
-    throw new Error("Invalid or missing price in Perplexity response");
-  }
+            // Validate range
+            if (result.score < 1) result.score = 1;
+            if (result.score > 10) result.score = 10;
 
-  // Clamp sentiment to 0-100
-  const clampedSentiment = Math.max(0, Math.min(100, Number.isNaN(sentiment) ? 50 : sentiment));
+            await Logger.info(`Sentiment Analysis Complete: ${result.sentiment} (${result.score}/10)`, result);
+            return result;
 
-  return { price, sentiment: clampedSentiment, reason };
-}
-
-/**
- * Fetches Bitcoin price and last 4h news sentiment from Perplexity.
- * Returns { price, sentiment (0–100), reason }.
- */
-export async function getMarketAnalysis(): Promise<MarketAnalysis> {
-  const apiKey = process.env.PERPLEXITY_API_KEY;
-  if (!apiKey) {
-    throw new Error("Missing PERPLEXITY_API_KEY");
-  }
-
-  // Enhanced prompt to ensure JSON output
-  const prompt = `Analyze current Bitcoin price and news from the last 4 hours.
-  Return STRICTLY valid JSON with no markdown formatting.
-  Format: { "price": number, "sentiment": number (0-100), "reason": string }
-  Example: { "price": 45000, "sentiment": 75, "reason": "ETF approval rumors driving price up." }`;
-
-  let res: Response;
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
-
-    res = await fetch("https://api.perplexity.ai/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "sonar",
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 512,
-        temperature: 0.2,
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-  } catch (e) {
-    if (e instanceof Error && e.name === 'AbortError') {
-      throw new Error("Perplexity request timed out after 15s");
+        } catch (error) {
+            await Logger.error("Perplexity Analysis Failed", { error: String(error) });
+            // Fallback to NEUTRAL to prevent crash, but log error
+            return {
+                score: 5,
+                sentiment: "NEUTRAL",
+                reasoning: "Error fetching sentiment. Defaulting to Neutral."
+            };
+        }
     }
-    throw new Error(`Perplexity request failed: ${e instanceof Error ? e.message : String(e)}`);
-  }
-
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Perplexity API error ${res.status}: ${text.slice(0, 200)}`);
-  }
-
-  let body: { choices?: Array<{ message?: { content?: string } }> };
-  try {
-    body = JSON.parse(text) as { choices?: Array<{ message?: { content?: string } }> };
-  } catch {
-    throw new Error("Perplexity response is not JSON");
-  }
-
-  const content = body.choices?.[0]?.message?.content;
-  if (typeof content !== "string") {
-    throw new Error("Perplexity response missing choices[0].message.content");
-  }
-
-  return parseAnalysis(content);
 }
