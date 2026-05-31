@@ -129,7 +129,7 @@ function DashboardContent({ secret }: { secret: string }) {
     try {
       const [statusRes, chartRes, signalRes, pricesRes] = await Promise.all([
         fetcher("/api/user/status"),
-        fetcher(`/api/chart?interval=${chartInterval}&limit=150&asset=${activeAsset}&portfolio=${viewMode}`),
+        fetcher(`/api/chart?interval=${chartInterval}&limit=720&asset=${activeAsset}&portfolio=${viewMode}`),
         fetcher(`/api/signals?asset=${activeAsset}`),
         fetcher("/api/prices")
       ]);
@@ -273,7 +273,7 @@ function DashboardContent({ secret }: { secret: string }) {
   const runWorkerBacktest = async () => {
     setBacktesting(true);
     try {
-      const candlesRes = await fetcher(`/api/chart?interval=${chartInterval}&limit=600&asset=${activeAsset}`);
+      const candlesRes = await fetcher(`/api/chart?interval=${chartInterval}&limit=720&asset=${activeAsset}`);
       const candlesJson = await candlesRes.json();
       if (candlesJson && candlesJson.candles) {
         workerRef.current?.postMessage({
