@@ -1,0 +1,10 @@
+{
+    "functions": {
+        "src/app/api/trade/route.ts": {
+            "maxDuration": 60
+        },
+        "src/app/api/agent/cycle/route.ts": {
+            "maxDuration": 60
+        }
+    }
+}
