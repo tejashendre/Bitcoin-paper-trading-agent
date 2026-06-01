@@ -16,6 +16,8 @@ export interface Env {
   RISK_PER_TRADE: number;
   ADMIN_SECRET: string;
   CRON_SECRET: string;
+  GROQ_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
 }
 
 let cached: Env | null = null;
@@ -56,6 +58,8 @@ export function getEnv(): Env {
     RISK_PER_TRADE: parseFloat(process.env.RISK_PER_TRADE || "1"),
     ADMIN_SECRET: process.env.ADMIN_SECRET || "admin123@",
     CRON_SECRET: process.env.CRON_SECRET || "",
+    GROQ_API_KEY: process.env.GROQ_API_KEY || "",
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
   };
 
   return cached;

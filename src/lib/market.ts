@@ -54,20 +54,24 @@ export class MarketService {
     try {
       const cached = await redis.get<string>(cacheKey);
       if (cached) {
-        return typeof cached === "string" ? JSON.parse(cached) : cached;
+        const parsed = typeof cached === "string" ? JSON.parse(cached) : cached;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.slice(-limit);
+        }
       }
     } catch {}
 
     const config = SUPPORTED_ASSETS[assetKey] || SUPPORTED_ASSETS.BTC;
+    const fetchLimit = Math.max(720, limit); // Always fetch at least 720 candles to keep the cache rich
 
     // Try Kraken first (Primary institutional feed)
     if (config.krakenPair) {
       try {
-        const candles = await this.fetchKrakenCandles(config.krakenPair, timeframe, limit);
+        const candles = await this.fetchKrakenCandles(config.krakenPair, timeframe, fetchLimit);
         if (candles && candles.length > 0) {
           const ttl = timeframe === "1m" ? 10 : timeframe === "5m" ? 30 : timeframe === "15m" ? 60 : 300;
           await redis.set(cacheKey, JSON.stringify(candles), { ex: ttl });
-          return candles;
+          return candles.slice(-limit);
         }
       } catch (krakenError) {
         console.warn(`Kraken feed failed for ${assetKey}, trying Yahoo Finance fallback...`, krakenError);
@@ -76,11 +80,11 @@ export class MarketService {
 
     // Fallback to Yahoo Finance (Secondary unblocked feed)
     try {
-      const candles = await this.fetchYahooCandles(config.yahooTicker, timeframe, limit);
+      const candles = await this.fetchYahooCandles(config.yahooTicker, timeframe, fetchLimit);
       if (candles && candles.length > 0) {
         const ttl = timeframe === "1m" ? 10 : timeframe === "5m" ? 30 : timeframe === "15m" ? 60 : 300;
         await redis.set(cacheKey, JSON.stringify(candles), { ex: ttl });
-        return candles;
+        return candles.slice(-limit);
       }
     } catch (yahooError) {
       console.error(`Yahoo Finance fallback also failed for ${assetKey}:`, yahooError);
