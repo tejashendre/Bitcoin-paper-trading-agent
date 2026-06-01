@@ -57,9 +57,9 @@ export class ScalpEngine {
       const currentPrice = snap1m.price;
 
       // 2. Regime Filter: Scalping activates in mean-reverting OR squeeze states
-      // Hurst < 0.52: accepts mild trending markets (was 0.48 — too strict)
-      // Vol percentile < 40: accepts moderate squeezes (was 30 — too strict)
-      const isMeanReverting = stats15m.hurstExponent < 0.58;
+      // Hurst < 0.50: strict mean-reverting regimes only
+      // Vol percentile < 55: accepts moderate squeezes
+      const isMeanReverting = stats15m.hurstExponent < 0.50;
       const isVolatilitySqueeze = stats15m.volatilityPercentile < 55;
 
       if (!isMeanReverting && !isVolatilitySqueeze) {
@@ -132,13 +132,13 @@ export class ScalpEngine {
       }
 
       // 4. Determine Action
-      // Score threshold: 8 (was 12) — still requires 2+ strong indicator agreements
+      // Score threshold: 12 — requires strong indicator agreements
       let action: 'SCALP_BUY' | 'SCALP_SHORT' | 'HOLD' = 'HOLD';
       let finalScore = 0;
-      if (buyScore >= 8 && buyScore > shortScore) {
+      if (buyScore >= 12 && buyScore > shortScore) {
         action = 'SCALP_BUY';
         finalScore = buyScore;
-      } else if (shortScore >= 8 && shortScore > buyScore) {
+      } else if (shortScore >= 12 && shortScore > buyScore) {
         action = 'SCALP_SHORT';
         finalScore = shortScore;
       }
@@ -173,8 +173,9 @@ export class ScalpEngine {
       }
 
       // Tight, optimized scalp parameters
-      const stopDistance = currentPrice * 0.0035; // Tightly fixed 0.35% risk
-      const takeProfitDistance = currentPrice * 0.0070; // 0.70% take profit target (1:2 R:R)
+      // ATR-based dynamic stops: 1.2 * ATR for Stop Loss, 2.4 * ATR for Take Profit
+      const stopDistance = oneHourAtr * 1.2;
+      const takeProfitDistance = oneHourAtr * 2.4;
 
       const stopLoss = action === 'SCALP_BUY' ? currentPrice - stopDistance : currentPrice + stopDistance;
       const takeProfit = action === 'SCALP_BUY' ? currentPrice + takeProfitDistance : currentPrice - takeProfitDistance;

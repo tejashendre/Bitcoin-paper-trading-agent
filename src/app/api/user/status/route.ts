@@ -19,28 +19,36 @@ export async function GET() {
 
         const calculateTrueValue = async (portfolio: any) => {
             let totalValue = portfolio.usd;
-            const activeAssets = Object.keys(portfolio.openPositions || {});
+            const openAssets = Object.keys(portfolio.openPositions || {});
+            const scalpAssets = Object.keys(portfolio.scalpPositions || {});
+            const allActiveAssets = Array.from(new Set([...openAssets, ...scalpAssets]));
             const prices: Record<string, number> = {};
-            for (const asset of activeAssets) {
+            for (const asset of allActiveAssets) {
                 try {
                     const price = await MarketService.getCurrentPrice(asset);
                     prices[asset] = price;
-                    const pos = portfolio.openPositions[asset];
-                    if (pos) {
+                    
+                    const calculatePosValue = (pos: any, currentPrice: number) => {
+                        if (!pos) return 0;
                         const isShort = pos.direction === 'SHORT';
                         if (isShort) {
-                            const pnl = (pos.entryPrice - price) * pos.amount;
-                            totalValue += pos.usdInvested + pnl;
+                            const pnl = (pos.entryPrice - currentPrice) * pos.amount;
+                            return pos.usdInvested + pnl;
                         } else {
-                            totalValue += pos.amount * price;
+                            return pos.amount * currentPrice;
                         }
+                    };
+
+                    if (portfolio.openPositions?.[asset]) {
+                        totalValue += calculatePosValue(portfolio.openPositions[asset], price);
+                    }
+                    if (portfolio.scalpPositions?.[asset]) {
+                        totalValue += calculatePosValue(portfolio.scalpPositions[asset], price);
                     }
                 } catch (err) {
                     console.error(`Error getting current price for ${asset} during sync:`, err);
-                    const pos = portfolio.openPositions[asset];
-                    if (pos) {
-                        totalValue += pos.usdInvested; // fallback
-                    }
+                    if (portfolio.openPositions?.[asset]) totalValue += portfolio.openPositions[asset].usdInvested;
+                    if (portfolio.scalpPositions?.[asset]) totalValue += portfolio.scalpPositions[asset].usdInvested;
                 }
             }
             return { totalValue, prices };
@@ -78,21 +86,28 @@ export async function GET() {
             }
 
             // Unrealized profits
-            const activeAssets = Object.keys(portfolio.openPositions || {});
-            for (const asset of activeAssets) {
-                const pos = portfolio.openPositions[asset];
-                if (pos) {
+            const openAssets = Object.keys(portfolio.openPositions || {});
+            const scalpAssets = Object.keys(portfolio.scalpPositions || {});
+            const allActiveAssets = Array.from(new Set([...openAssets, ...scalpAssets]));
+            
+            for (const asset of allActiveAssets) {
+                if (!profitByAsset[asset]) {
+                    profitByAsset[asset] = { realized: 0, unrealized: 0, total: 0 };
+                }
+                
+                const calculateUnrealized = (pos: any) => {
+                    if (!pos) return 0;
                     const currentPrice = prices[asset] || pos.entryPrice;
                     const isShort = pos.direction === 'SHORT';
-                    const unrealizedPnl = isShort
+                    return isShort
                         ? (pos.entryPrice - currentPrice) * pos.amount
                         : (pos.amount * currentPrice) - pos.usdInvested;
-                    
-                    if (!profitByAsset[asset]) {
-                        profitByAsset[asset] = { realized: 0, unrealized: 0, total: 0 };
-                    }
-                    profitByAsset[asset].unrealized = unrealizedPnl;
-                }
+                };
+
+                const openUnrealized = calculateUnrealized(portfolio.openPositions?.[asset]);
+                const scalpUnrealized = calculateUnrealized(portfolio.scalpPositions?.[asset]);
+                
+                profitByAsset[asset].unrealized += (openUnrealized + scalpUnrealized);
             }
 
             // Sum up totals

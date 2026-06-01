@@ -7,6 +7,7 @@ import { PortfolioManager as OriginalPortfolioManager } from "@/lib/portfolio";
 import { TelegramService } from "@/lib/telegram";
 import { getEnv } from "@/lib/env";
 import { Trade, OpenPosition, Portfolio } from "@/lib/types";
+import { TradeLedger } from "@/lib/memory/tradeLedger";
 
 // Proxy PortfolioManager calls to the 'ai' portfolio context for parallel execution
 const PortfolioManager = {
@@ -140,6 +141,21 @@ async function handleScalpTrade(request: Request) {
 
           await PortfolioManager.updatePortfolio(portfolio);
           await PortfolioManager.logTrade(closeTrade);
+          
+          await TradeLedger.recordTrade({
+            tradeId: closeTrade.id,
+            asset: assetKey,
+            entryTime: pos.entryTime,
+            exitTime: closeTrade.exitTime || new Date().toISOString(),
+            regimeAtEntry: 'SCALP',
+            aiThesis: pos.reasoning,
+            predictedDirection: isShort ? 'SHORT' : 'LONG',
+            actualPnlUsd: pnl,
+            actualPnlPercent: pnlPercent,
+            wasPredictionCorrect: pnl > 0,
+            mistakesMade: [],
+            lessonsLearned: [],
+          });
           
           await Logger.info(`SCALP EXIT [${assetKey}] (${isShort ? 'SHORT' : 'LONG'}): ${exitReason} PnL: ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)} (${pnlPercent >= 0 ? "+" : ""}${pnlPercent.toFixed(2)}%)`);
           await TelegramService.sendTradeAlert(isShort ? "SCALP_COVER" : "SCALP_SELL", pos.amount, exitPrice, `${exitReason} | Scalp PnL: $${pnl.toFixed(2)}`, portfolio.usd, pos.signalScore, undefined, undefined, assetKey);

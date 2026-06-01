@@ -644,11 +644,28 @@ function DashboardContent({ secret }: { secret: string }) {
                   {data?.logs?.length === 0 ? (
                     <p className={`text-xs ${textMuted} italic`}>No telemetry logs received.</p>
                   ) : (
-                    data?.logs?.map((l: any) => (
-                      <div key={l.id} className={textSub}>
-                        <span className={textMuted}>[{new Date(l.timestamp).toLocaleTimeString()}]</span> {l.message}
-                      </div>
-                    ))
+                    data?.logs?.map((l: any) => {
+                      const msgLower = l.message.toLowerCase();
+                      let colorClass = textSub;
+                      if (msgLower.includes("error") || msgLower.includes("failed") || msgLower.includes("blocked") || msgLower.includes("stop")) {
+                        colorClass = "text-red-400";
+                      } else if (msgLower.includes("entry") || msgLower.includes("buy") || msgLower.includes("long") || msgLower.includes("target")) {
+                        colorClass = "text-emerald-400 font-bold";
+                      } else if (msgLower.includes("exit") || msgLower.includes("sell") || msgLower.includes("cover") || msgLower.includes("short")) {
+                        colorClass = "text-amber-400";
+                      } else if (msgLower.includes("reflection") || msgLower.includes("brain") || msgLower.includes("lesson")) {
+                        colorClass = "text-purple-400";
+                      } else if (msgLower.includes("volatility") || msgLower.includes("hurst") || msgLower.includes("score") || msgLower.includes("indicator")) {
+                        colorClass = "text-blue-400";
+                      }
+                      
+                      return (
+                        <div key={l.id} className={colorClass}>
+                          <span className={`${textMuted} mr-2`}>[{new Date(l.timestamp).toLocaleTimeString()}]</span>
+                          {l.message}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>

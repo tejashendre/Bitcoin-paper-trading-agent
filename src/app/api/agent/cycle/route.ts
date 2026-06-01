@@ -309,6 +309,22 @@ async function handleCycle(request: Request) {
 
           await PortfolioManager.updatePortfolio(portfolio);
           await PortfolioManager.logTrade(closeTrade);
+
+          await TradeLedger.recordTrade({
+            tradeId: closeTrade.id,
+            asset: assetKey,
+            entryTime: pos.entryTime,
+            exitTime: closeTrade.exitTime || new Date().toISOString(),
+            regimeAtEntry: 'SCALP',
+            aiThesis: pos.reasoning,
+            predictedDirection: isShort ? 'SHORT' : 'LONG',
+            actualPnlUsd: pnl,
+            actualPnlPercent: closeTrade.pnlPercent || 0,
+            wasPredictionCorrect: pnl > 0,
+            mistakesMade: [],
+            lessonsLearned: [],
+          });
+
           await Logger.info(`SCALP EXIT [${assetKey}]: ${sltp.reason} PnL: $${pnl.toFixed(2)}`);
           cycleReport.tradesExecuted.push({ asset: assetKey, action: closeTrade.action, pnl });
         } else if (sltp.trailed && sltp.newStopLoss) {

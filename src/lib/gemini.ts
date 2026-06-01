@@ -1,10 +1,27 @@
 import { getEnv } from "./env";
 import { CompositeSignal, RiskParameters } from "./types";
+import { getRedis } from "./redis";
+import { Logger } from "./logger";
 
 export class GeminiService {
   static async validateSignal(signal: CompositeSignal, risk: RiskParameters | null): Promise<{ confidence: number; reasoning: string }> {
     const env = getEnv();
+    const redis = getRedis();
+    const rateLimitKey = `ai:rate_limit:gemini`;
+    
+    // Check if we are currently rate limited
+    const isRateLimited = await redis.get(rateLimitKey);
+    if (isRateLimited) {
+      if (signal.totalScore >= 60) {
+        return { confidence: signal.confidence, reasoning: "AI rate limited. Exceptional math score bypassed LLM validation." };
+      }
+      return { confidence: Math.max(0, signal.confidence - 0.2), reasoning: "AI rate limited. Math score too low to bypass without LLM." };
+    }
+
     try {
+      // Set 45 second cooldown to protect Free Tier quotas
+      await redis.set(rateLimitKey, "1", { ex: 45 });
+      
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), 15000);
       const prompt = `You are an elite quantitative trading analyst at a top-tier hedge fund. Review this algorithmic trading signal and provide your assessment.
@@ -59,8 +76,12 @@ Respond with ONLY a JSON object:
       if (newConf > 1) newConf = 1;
       
       return { confidence: newConf, reasoning };
-    } catch (e) {
+    } catch (e: any) {
       console.error("Gemini validation failed", e);
+      if (e.message?.includes("429") || e.message?.includes("RESOURCE_EXHAUSTED")) {
+        // Enforce a longer 5-minute timeout if we actually hit the provider's hard rate limit
+        await getRedis().set(`ai:rate_limit:gemini`, "1", { ex: 300 });
+      }
       return { confidence: signal.confidence, reasoning: "AI validation unavailable. Using raw signal." };
     }
   }
