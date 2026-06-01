@@ -109,7 +109,6 @@ export class GeminiService {
   static async validateSignal(signal: CompositeSignal, risk: RiskParameters | null): Promise<{ confidence: number; reasoning: string }> {
     const env = getEnv();
     const redis = getRedis();
-    const rateLimitKey = `ai:rate_limit:gemini`;
 
     const prompt = `You are an elite quantitative trading analyst at a top-tier hedge fund. Review this algorithmic trading signal and provide your assessment.
 
@@ -135,72 +134,115 @@ ${risk ? `RISK PARAMETERS:
 Respond with ONLY a JSON object:
 {"confidence_adjustment": <number -0.2 to +0.2>, "reasoning": "<1-2 sentence professional assessment>"}`;
 
-    // ── Primary: Gemini (if not rate limited) ────────────────────────
-    const isRateLimited = await redis.get(rateLimitKey);
-    if (!isRateLimited && env.GEMINI_API_KEY) {
-      try {
-        await redis.set(rateLimitKey, "1", { ex: 45 }); // Cooldown to protect free quota
-        
-        const controller = new AbortController();
-        const id = setTimeout(() => controller.abort(), 12000);
-        const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": env.GEMINI_API_KEY
-          },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }]
-          }),
-          signal: controller.signal
-        });
-        clearTimeout(id);
-        
-        if (res.ok) {
-          const data = await res.json();
-          let text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) {
-            text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const parsed = JSON.parse(text);
-            const adjustment = typeof parsed.confidence_adjustment === 'number' ? parsed.confidence_adjustment : 0;
-            const reasoning = parsed.reasoning || "Gemini validated.";
-            let newConf = Math.min(1, Math.max(0, signal.confidence + adjustment));
-            return { confidence: newConf, reasoning };
+    const tasks: Promise<{ provider: string; adjustment: number; reasoning: string }>[] = [];
+
+    // 1. Gemini Core Task
+    const geminiCooldownKey = `ai:cooldown:gemini`;
+    const isGeminiOnCooldown = await redis.get(geminiCooldownKey);
+    if (!isGeminiOnCooldown && env.GEMINI_API_KEY) {
+      tasks.push((async () => {
+        try {
+          const controller = new AbortController();
+          const id = setTimeout(() => controller.abort(), 12000);
+          const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": env.GEMINI_API_KEY
+            },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }]
+            }),
+            signal: controller.signal
+          });
+          clearTimeout(id);
+          
+          if (res.ok) {
+            const data = await res.json();
+            let text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) {
+              text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+              const parsed = JSON.parse(text);
+              const adjustment = typeof parsed.confidence_adjustment === 'number' ? parsed.confidence_adjustment : 0;
+              const reasoning = parsed.reasoning || "Gemini validated.";
+              return { provider: "Gemini", adjustment, reasoning };
+            }
+          } else if (res.status === 429) {
+            console.warn("Gemini 429 rate limit hit, setting 5m cooldown.");
+            await redis.set(geminiCooldownKey, "1", { ex: 300 });
           }
-        } else if (res.status === 429) {
-          console.warn("Gemini 429 rate limit hit, flagging cooldown...");
-          await redis.set(rateLimitKey, "1", { ex: 300 }); // Longer timeout
+          throw new Error(`Gemini API returned status ${res.status}`);
+        } catch (e: any) {
+          throw new Error(`Gemini: ${e.message}`);
         }
-      } catch (geminiErr) {
-        console.warn("Gemini validation failed, moving to secondary fallbacks...", geminiErr);
+      })());
+    }
+
+    // 2. Groq Core Task
+    const groqCooldownKey = `ai:cooldown:groq`;
+    const isGroqOnCooldown = await redis.get(groqCooldownKey);
+    if (!isGroqOnCooldown && env.GROQ_API_KEY) {
+      tasks.push((async () => {
+        try {
+          const result = await this.validateWithGroq(prompt, env.GROQ_API_KEY!);
+          return { provider: "Groq", ...result };
+        } catch (e: any) {
+          if (e.message?.includes("429")) {
+            console.warn("Groq 429 rate limit hit, setting 5m cooldown.");
+            await redis.set(groqCooldownKey, "1", { ex: 300 });
+          }
+          throw e;
+        }
+      })());
+    }
+
+    // 3. OpenRouter Core Task
+    const orCooldownKey = `ai:cooldown:openrouter`;
+    const isOrOnCooldown = await redis.get(orCooldownKey);
+    if (!isOrOnCooldown && env.OPENROUTER_API_KEY) {
+      tasks.push((async () => {
+        try {
+          const result = await this.validateWithOpenRouter(prompt, env.OPENROUTER_API_KEY!);
+          return { provider: "OpenRouter", ...result };
+        } catch (e: any) {
+          if (e.message?.includes("429")) {
+            console.warn("OpenRouter 429 rate limit hit, setting 5m cooldown.");
+            await redis.set(orCooldownKey, "1", { ex: 300 });
+          }
+          throw e;
+        }
+      })());
+    }
+
+    // Execute all active cognitive tasks concurrently
+    const results = await Promise.allSettled(tasks);
+    const successful: { provider: string; adjustment: number; reasoning: string }[] = [];
+    const errors: string[] = [];
+
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        successful.push(r.value);
+      } else {
+        errors.push(r.reason?.message || String(r.reason));
       }
     }
 
-    // ── Secondary: Groq (llama-3.3-70b-versatile free tier) ──────────
-    if (env.GROQ_API_KEY) {
-      try {
-        const groqResult = await this.validateWithGroq(prompt, env.GROQ_API_KEY);
-        await Logger.info(`AI Validation: Successfully validated via Groq fallback`);
-        let newConf = Math.min(1, Math.max(0, signal.confidence + groqResult.adjustment));
-        return { confidence: newConf, reasoning: groqResult.reasoning };
-      } catch (groqErr) {
-        console.warn("Groq validation failed, checking next option...", groqErr);
-      }
+    if (successful.length > 0) {
+      // Compute averaged institutional consensus adjustment
+      const totalAdjustment = successful.reduce((sum, item) => sum + item.adjustment, 0);
+      const avgAdjustment = totalAdjustment / successful.length;
+      
+      // Combine reasoned theses into a unified report
+      const combinedReasoning = successful.map(item => `[${item.provider}]: ${item.reasoning}`).join(" ");
+      const newConf = Math.min(1, Math.max(0, signal.confidence + avgAdjustment));
+      
+      const providersUsed = successful.map(s => s.provider).join(", ");
+      await Logger.info(`AI Consensus [${providersUsed}]: Avg adjustment: ${avgAdjustment >= 0 ? '+' : ''}${avgAdjustment.toFixed(3)} → Final Conf: ${(newConf * 100).toFixed(1)}%`);
+
+      return { confidence: newConf, reasoning: combinedReasoning };
     }
 
-    // ── Tertiary: OpenRouter (meta-llama/llama-3-8b-instruct:free) ─────
-    if (env.OPENROUTER_API_KEY) {
-      try {
-        const orResult = await this.validateWithOpenRouter(prompt, env.OPENROUTER_API_KEY);
-        await Logger.info(`AI Validation: Successfully validated via OpenRouter fallback`);
-        let newConf = Math.min(1, Math.max(0, signal.confidence + orResult.adjustment));
-        return { confidence: newConf, reasoning: orResult.reasoning };
-      } catch (orErr) {
-        console.warn("OpenRouter validation failed...", orErr);
-      }
-    }
-
-    // ── Quaternary Fallback: Mathematical Quant Model Bypass ─────────
+    // ── Quaternary Fallback: Quant Math Model Bypass ─────────
     if (signal.totalScore >= 60) {
       return { confidence: signal.confidence, reasoning: "All LLM APIs unavailable. Exceptional math score bypassed LLM validation." };
     }
