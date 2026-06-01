@@ -4,6 +4,7 @@ import { getPredictionPerformanceSummary, savePredictionFromDecision } from './p
 import { buildAutonomousPrompt } from './prompts/autonomousDecisionPrompt';
 import { brainDecisionSchema } from './schemas';
 import { AutonomousRiskGovernor } from './autonomousRiskGovernor';
+import { LLMProxy } from '@/lib/llmProxy';
 
 export class AutonomousBrain {
   /**
@@ -32,14 +33,10 @@ export class AutonomousBrain {
       predictionStats
     );
 
-    // 2. Query LLM
+    // 2. Query LLM & Validate (Failover Proxy with strict Zod parsing)
     let rawDecision: BrainDecision;
     try {
-      const llmOutput = await this.queryGemini(prompt);
-      
-      // 3. Validate output against Schema
-      const parsed = JSON.parse(llmOutput);
-      rawDecision = brainDecisionSchema.parse(parsed) as BrainDecision;
+      rawDecision = await LLMProxy.queryAndValidate<BrainDecision>(prompt, brainDecisionSchema as any, 35000);
       
     } catch (err: any) {
       console.error("[AutonomousBrain] Critical LLM failure:", err);
@@ -76,37 +73,5 @@ export class AutonomousBrain {
     }
 
     return finalDecision;
-  }
-
-  private static async queryGemini(prompt: string): Promise<string> {
-    const env = getEnv();
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 35000); // 35s timeout
-    
-    // Using Gemini 2.0 Flash with JSON mode
-    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": env.GEMINI_API_KEY
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          response_mime_type: "application/json",
-        }
-      }),
-      signal: controller.signal
-    });
-    
-    clearTimeout(id);
-    
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Gemini API HTTP ${res.status}: ${errorText}`);
-    }
-    
-    const data = await res.json();
-    return data.candidates[0].content.parts[0].text;
   }
 }

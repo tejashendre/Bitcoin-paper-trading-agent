@@ -1,4 +1,6 @@
 import { getEnv } from "@/lib/env";
+import { z } from "zod";
+import { LLMProxy } from "@/lib/llmProxy";
 
 export type CatalystSentiment = 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'PANIC';
 
@@ -7,6 +9,12 @@ export interface NewsCatalystReport {
   score: number; // -100 to 100
   reasoning: string;
 }
+
+export const newsCatalystSchema = z.object({
+  sentiment: z.enum(['BULLISH', 'BEARISH', 'NEUTRAL', 'PANIC']),
+  score: z.number().min(-100).max(100),
+  reasoning: z.string()
+});
 
 export class NewsSentimentEngine {
   static async getMacroSentiment(): Promise<NewsCatalystReport> {
@@ -41,34 +49,8 @@ Respond ONLY with a valid JSON object matching this exact schema:
   "reasoning": "One concise sentence explaining why."
 }`;
 
-      const env = getEnv();
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 10000);
-      const llmRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": env.GEMINI_API_KEY
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { response_mime_type: "application/json" }
-        }),
-        signal: controller.signal
-      });
-      clearTimeout(id);
-      
-      if (!llmRes.ok) throw new Error(`Gemini failed: ${llmRes.status}`);
-      const data = await llmRes.json();
-      let text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-      text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-      
-      const parsed = JSON.parse(text);
-      return {
-        sentiment: parsed.sentiment || 'NEUTRAL',
-        score: typeof parsed.score === 'number' ? parsed.score : 0,
-        reasoning: parsed.reasoning || 'Defaulted to neutral.'
-      };
+      const report = await LLMProxy.queryAndValidate<NewsCatalystReport>(prompt, newsCatalystSchema as any, 10000);
+      return report;
     } catch (e) {
       console.error("[NewsSentimentEngine] Error:", e);
       return { sentiment: 'NEUTRAL', score: 0, reasoning: 'Error fetching sentiment.' };

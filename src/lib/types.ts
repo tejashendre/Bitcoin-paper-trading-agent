@@ -398,7 +398,7 @@ export interface RiskGovernorLimits {
 /** The raw decision output from the LLM Brain. */
 export interface BrainDecision {
   action: 'BUY' | 'SELL' | 'SHORT' | 'COVER' | 'HOLD';
-  confidence: number;            // 0-100
+  confidence: number;            // 0.0 - 1.0
   conviction: 'LOW' | 'MEDIUM' | 'HIGH';
   thesis: string;                // The AI's justification
   takeProfitPrice: number | null;

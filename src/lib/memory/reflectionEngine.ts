@@ -2,6 +2,21 @@ import { getEnv } from '@/lib/env';
 import { TradeLedger } from './tradeLedger';
 import { ReflectionSummary } from '@/lib/types';
 import { getRedis } from '@/lib/redis';
+import { z } from 'zod';
+import { LLMProxy } from '@/lib/llmProxy';
+
+const reflectionSchema = z.object({
+  topMistake: z.string(),
+  actionableRule: z.string(),
+  optimizedParameters: z.object({
+    rsiOverbought: z.number(),
+    rsiOversold: z.number(),
+    macdHistogramMin: z.number(),
+    stochRsiOverbought: z.number(),
+    stochRsiOversold: z.number(),
+    vwapDeviationPercent: z.number()
+  }).optional()
+});
 
 export class ReflectionEngine {
   private static readonly REFLECTION_KEY = 'ai:recent_reflection';
@@ -46,23 +61,7 @@ Output ONLY a strict JSON object with:
 Adjust the parameters strictly between reasonable technical limits.`;
 
     try {
-      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": env.GEMINI_API_KEY
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            response_mime_type: "application/json",
-          }
-        }),
-      });
-
-      if (!res.ok) throw new Error("Reflection failed");
-      const data = await res.json();
-      const result = JSON.parse(data.candidates[0].content.parts[0].text);
+      const result = await LLMProxy.queryAndValidate(prompt, reflectionSchema, 20000);
 
       const summary: ReflectionSummary = {
         timestamp: new Date().toISOString(),
