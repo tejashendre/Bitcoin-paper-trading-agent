@@ -336,7 +336,8 @@ export type MarketRegime =
   | 'BREAKOUT'
   | 'PANIC'
   | 'FAKEOUT_RISK'
-  | 'RANDOM';
+  | 'RANDOM'
+  | 'SCALP';
 
 /** Volatility regime categorization. */
 export type VolatilityRegime = 'ULTRA_LOW' | 'LOW' | 'NORMAL' | 'HIGH' | 'EXTREME';
