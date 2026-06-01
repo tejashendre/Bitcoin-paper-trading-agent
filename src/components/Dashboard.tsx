@@ -540,7 +540,11 @@ function DashboardContent({ secret }: { secret: string }) {
                   trades={chartData.trades} 
                   indicators={chartData.indicators} 
                   assetName={selectedAssetConfig.name}
-                  activePosition={viewMode === "ai" ? data?.aiPortfolio?.openPositions?.[activeAsset] : data?.userPortfolio?.openPositions?.[activeAsset]} 
+                  activePosition={
+                    viewMode === "ai" 
+                      ? (data?.aiPortfolio?.openPositions?.[activeAsset] || data?.aiPortfolio?.scalpPositions?.[activeAsset])
+                      : (data?.userPortfolio?.openPositions?.[activeAsset] || data?.userPortfolio?.scalpPositions?.[activeAsset])
+                  } 
                   timezone={chartTimezone} 
                   theme={theme}
                 />
@@ -726,7 +730,9 @@ function DashboardContent({ secret }: { secret: string }) {
                   <span className={textMuted}>Used Capital:</span>
                   <div className="font-bold text-xs text-orange-400">
                     ${(() => {
-                      const used = Object.values(portfolio?.openPositions || {}).reduce((acc: number, pos: any) => acc + (pos?.usdInvested || 0), 0);
+                      const openUsed = Object.values(portfolio?.openPositions || {}).reduce((acc: number, pos: any) => acc + (pos?.usdInvested || 0), 0);
+                      const scalpUsed = Object.values(portfolio?.scalpPositions || {}).reduce((acc: number, pos: any) => acc + (pos?.usdInvested || 0), 0);
+                      const used = openUsed + scalpUsed;
                       return used.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                     })()}
                   </div>
@@ -785,69 +791,77 @@ function DashboardContent({ secret }: { secret: string }) {
                     {portfolio?.totalTrades || 0} Trades
                   </span>
                 </div>
-              </div>
-            </div>
-
-            {/* Active Positions Tracker */}
+                         {/* Active Positions Tracker */}
             <div className={`border rounded-2xl p-5 space-y-4 ${bgCard}`}>
               <h2 className={`text-[10px] font-bold font-mono ${textSub} border-b ${borderCol} pb-3 uppercase tracking-wider`}>Active Market Positions</h2>
-              {Object.keys(portfolio?.openPositions || {}).length === 0 ? (
-                <p className={`text-xs ${textMuted} font-mono italic`}>No active positions open.</p>
-              ) : (
-                <div className="space-y-3">
-                  {Object.keys(portfolio.openPositions).map((assetKey) => {
-                    const pos = portfolio.openPositions[assetKey];
-                    if (!pos) return null;
-                    const isShort = pos.direction === "SHORT";
-                    const currentPrice = livePrices?.[assetKey]?.price || pos.entryPrice;
-                    const pnl = isShort 
-                      ? (pos.entryPrice - currentPrice) * pos.amount 
-                      : (pos.amount * currentPrice) - pos.usdInvested;
-                    const pnlPercent = (pnl / pos.usdInvested) * 100;
-                    
-                    return (
-                      <div key={assetKey} className={`p-3 border rounded-xl space-y-2 ${bgSubCard}`}>
-                        <div className="flex justify-between items-center">
-                          <span className={`font-mono text-xs font-bold ${textPrimary}`}>{assetKey}</span>
-                          <span className={`font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border ${
-                            isShort ? "bg-red-950/20 text-red-400 border-red-900/30" : "bg-green-950/20 text-green-400 border-green-900/30"
-                          }`}>
-                            {isShort ? "SHORT" : "LONG"}
-                          </span>
+              {(() => {
+                const openPos = portfolio?.openPositions || {};
+                const scalpPos = portfolio?.scalpPositions || {};
+                const allPositions = [
+                  ...Object.keys(openPos).map(k => ({ ...openPos[k], assetKey: k, type: 'standard' })),
+                  ...Object.keys(scalpPos).map(k => ({ ...scalpPos[k], assetKey: k, type: 'scalp' }))
+                ];
+
+                if (allPositions.length === 0) {
+                  return <p className={`text-xs ${textMuted} font-mono italic`}>No active positions open.</p>;
+                }
+
+                return (
+                  <div className="space-y-3">
+                    {allPositions.map((pos, idx) => {
+                      const assetKey = pos.assetKey;
+                      const isShort = pos.direction === "SHORT";
+                      const isScalp = pos.type === 'scalp';
+                      const currentPrice = livePrices?.[assetKey]?.price || pos.entryPrice;
+                      const pnl = isShort 
+                        ? (pos.entryPrice - currentPrice) * pos.amount 
+                        : (pos.amount * currentPrice) - pos.usdInvested;
+                      const pnlPercent = (pnl / pos.usdInvested) * 100;
+                      
+                      return (
+                        <div key={`${assetKey}-${idx}`} className={`p-3 border rounded-xl space-y-2 ${bgSubCard}`}>
+                          <div className="flex justify-between items-center">
+                            <span className={`font-mono text-xs font-bold ${textPrimary}`}>{assetKey}</span>
+                            <span className={`font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                              isShort ? "bg-red-950/20 text-red-400 border-red-900/30" : "bg-green-950/20 text-green-400 border-green-900/30"
+                            }`}>
+                              {isShort ? (isScalp ? "SHORT (SCALP)" : "SHORT") : (isScalp ? "LONG (SCALP)" : "LONG")}
+                            </span>
+                          </div>
+                          <div className={`grid grid-cols-2 gap-x-2 gap-y-1 text-[10px] font-mono ${textSub}`}>
+                            <div>Size: <span className={textPrimary}>{pos.amount.toFixed(4)}</span></div>
+                            <div>Margin: <span className={textPrimary}>${pos.usdInvested.toFixed(2)}</span></div>
+                            <div>Entry: <span className={textPrimary}>${pos.entryPrice.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span></div>
+                            <div>Live: <span className={textPrimary}>${currentPrice.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span></div>
+                          </div>
+                          <div className={`flex justify-between items-center pt-1 border-t ${borderCol}`}>
+                            <span className={`text-[10px] font-mono ${textMuted}`}>PnL:</span>
+                            <span className={`font-mono text-xs font-bold ${pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
+                              {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} ({pnl >= 0 ? "+" : ""}{pnlPercent.toFixed(2)}%)
+                            </span>
+                          </div>
+                          {viewMode === "user" && !isScalp && (
+                            <button
+                              onClick={async () => {
+                                if (isSpectator) {
+                                  alert("🔒 Spectator Mode: Live execution locked. Position closures are disabled for guest spectating sessions.");
+                                  return;
+                                }
+                                setManualAmount("");
+                                await handleManualTrade(isShort ? "COVER" : "SELL");
+                              }}
+                              disabled={manualTrading || isSpectator}
+                              className={`w-full mt-1.5 py-1 text-[10px] font-mono font-bold rounded-lg transition-all ${btnCloseStyle}`}
+                            >
+                              {isSpectator ? "🔒 CLOSE POSITION LOCKED" : manualTrading ? "CLOSING..." : `CLOSE ${assetKey} POSITION`}
+                            </button>
+                          )}
                         </div>
-                        <div className={`grid grid-cols-2 gap-x-2 gap-y-1 text-[10px] font-mono ${textSub}`}>
-                          <div>Size: <span className={textPrimary}>{pos.amount.toFixed(4)}</span></div>
-                          <div>Margin: <span className={textPrimary}>${pos.usdInvested.toFixed(2)}</span></div>
-                          <div>Entry: <span className={textPrimary}>${pos.entryPrice.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span></div>
-                          <div>Live: <span className={textPrimary}>${currentPrice.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span></div>
-                        </div>
-                        <div className={`flex justify-between items-center pt-1 border-t ${borderCol}`}>
-                          <span className={`text-[10px] font-mono ${textMuted}`}>PnL:</span>
-                          <span className={`font-mono text-xs font-bold ${pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
-                            {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} ({pnl >= 0 ? "+" : ""}{pnlPercent.toFixed(2)}%)
-                          </span>
-                        </div>
-                        {viewMode === "user" && (
-                          <button
-                            onClick={async () => {
-                              if (isSpectator) {
-                                alert("🔒 Spectator Mode: Live execution locked. Position closures are disabled for guest spectating sessions.");
-                                return;
-                              }
-                              setManualAmount("");
-                              await handleManualTrade(isShort ? "COVER" : "SELL");
-                            }}
-                            disabled={manualTrading || isSpectator}
-                            className={`w-full mt-1.5 py-1 text-[10px] font-mono font-bold rounded-lg transition-all ${btnCloseStyle}`}
-                          >
-                            {isSpectator ? "🔒 CLOSE POSITION LOCKED" : manualTrading ? "CLOSING..." : `CLOSE ${assetKey} POSITION`}
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* AI Brain Intelligence Panel — Only visible in AI portfolio view */}
