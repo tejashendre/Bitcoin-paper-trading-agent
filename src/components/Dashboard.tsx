@@ -500,7 +500,28 @@ function DashboardContent({ secret }: { secret: string }) {
           <div className="lg:col-span-3 space-y-6">
             <div className={`border rounded-2xl p-5 ${bgCard}`}>
               <div className={`flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 border-b ${borderCol} pb-3 gap-3`}>
-                <h2 className={`text-[10px] font-bold font-mono ${textSub} uppercase tracking-wider`}>{selectedAssetConfig.name} ({selectedAssetConfig.symbol}) / {chartInterval.toUpperCase()} / {viewMode.toUpperCase()} MODE</h2>
+                <div className="flex items-center gap-4">
+                  <h2 className={`text-[10px] font-bold font-mono ${textSub} uppercase tracking-wider`}>{selectedAssetConfig.name} ({selectedAssetConfig.symbol}) / {chartInterval.toUpperCase()} / {viewMode.toUpperCase()} MODE</h2>
+                  {chartData && chartData.candles && chartData.candles.length > 0 && (
+                    (() => {
+                      const decimals = selectedAssetConfig.category === 'FOREX' ? 5 : 2;
+                      const lastCandle = chartData.candles[chartData.candles.length - 1];
+                      let maxHigh = -Infinity;
+                      let minLow = Infinity;
+                      for (const c of chartData.candles) {
+                        if (c.high > maxHigh) maxHigh = c.high;
+                        if (c.low < minLow) minLow = c.low;
+                      }
+                      return (
+                        <div className={`flex items-center gap-3 text-[10px] font-mono font-bold border-l pl-4 ${borderCol}`}>
+                          <span className={`${isDark ? "text-blue-400" : "text-blue-600"}`}>LIVE: {lastCandle.close.toFixed(decimals)}</span>
+                          <span className={`${isDark ? "text-green-400" : "text-green-600"}`}>H: {maxHigh.toFixed(decimals)}</span>
+                          <span className={`${isDark ? "text-red-400" : "text-red-600"}`}>L: {minLow.toFixed(decimals)}</span>
+                        </div>
+                      );
+                    })()
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <div className={`flex border rounded-lg overflow-hidden ${isDark ? "bg-[#0f172a] border-[#1f2937]" : "bg-[#fafbfc] border-[#e2e8f0]"}`}>
                     {["EU", "UK", "IST", "US"].map(tz => (
@@ -792,6 +813,28 @@ function DashboardContent({ secret }: { secret: string }) {
                   </span>
                 </div>
               </div>
+
+              {/* Detailed Breakdown */}
+              {data?.aiDetailedStats && viewMode === "ai" && (
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div className={`p-2 rounded-lg border ${bgSubCard} flex flex-col`}>
+                    <span className={`text-[8px] font-mono uppercase font-bold text-indigo-400 mb-1`}>HFT Scalp Engine</span>
+                    <span className={`text-[10px] font-mono ${textPrimary}`}>WR: {data.aiDetailedStats.scalp.trades > 0 ? ((data.aiDetailedStats.scalp.wins / data.aiDetailedStats.scalp.trades) * 100).toFixed(1) : 0}%</span>
+                    <span className={`text-[10px] font-mono ${data.aiDetailedStats.scalp.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      PnL: ${data.aiDetailedStats.scalp.pnl.toFixed(2)}
+                    </span>
+                    <span className={`text-[7px] font-mono mt-0.5 ${textMuted}`}>Total: {data.aiDetailedStats.scalp.trades} Scalps</span>
+                  </div>
+                  <div className={`p-2 rounded-lg border ${bgSubCard} flex flex-col`}>
+                    <span className={`text-[8px] font-mono uppercase font-bold text-emerald-400 mb-1`}>Swing Brain</span>
+                    <span className={`text-[10px] font-mono ${textPrimary}`}>WR: {data.aiDetailedStats.swing.trades > 0 ? ((data.aiDetailedStats.swing.wins / data.aiDetailedStats.swing.trades) * 100).toFixed(1) : 0}%</span>
+                    <span className={`text-[10px] font-mono ${data.aiDetailedStats.swing.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      PnL: ${data.aiDetailedStats.swing.pnl.toFixed(2)}
+                    </span>
+                    <span className={`text-[7px] font-mono mt-0.5 ${textMuted}`}>Total: {data.aiDetailedStats.swing.trades} Swings</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Active Positions Tracker */}

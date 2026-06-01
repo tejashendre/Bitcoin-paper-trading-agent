@@ -40,7 +40,7 @@ async function handleScalpTrade(request: Request) {
   }
 
   try {
-    await Logger.info(`Scalping Run Started for ${targetAsset} (${auth.source})`);
+    // Removed spammy Logger.info(`Scalping Run Started...`)
     const env = getEnv();
     const portfolio = await PortfolioManager.getPortfolio();
 
@@ -235,6 +235,11 @@ async function handleScalpTrade(request: Request) {
             signalScore: scalpSignal.score,
             reasoning: scalpSignal.reasoning
           };
+
+          // [HFT PIVOT] Instead of relying on Next.js event loop for fills,
+          // in production we would push this to Redis for the Rust Sniper Engine:
+          // await getRedis().publish('EXECUTE_SCALP', JSON.stringify(trade));
+          await Logger.info(`[IPC] Dispatched SCALP_${isShort ? 'SHORT' : 'BUY'} signal to Rust HFT Sniper for ${asset}`);
 
           await PortfolioManager.logTrade(trade);
           await Logger.info(`SCALP ENTRY [${asset}] (${isShort ? 'SHORT' : 'LONG'}): ${amount.toFixed(6)} @ $${currentPrice.toLocaleString()} | SL: $${scalpSignal.stopLoss.toFixed(4)} | TP: $${scalpSignal.takeProfit.toFixed(4)}`);

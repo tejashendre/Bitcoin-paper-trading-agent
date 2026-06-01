@@ -1,0 +1,12 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY src-python/ .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+# The Python engine is currently designed to be run as an API server 
+# or triggered via a cron task. We'll run it as a persistent worker if it's adapted,
+# but for now we'll just keep the container alive to allow the Node API to spawn it,
+# We will keep the container alive to allow the Node API or Cron to spawn it
+CMD ["tail", "-f", "/dev/null"]

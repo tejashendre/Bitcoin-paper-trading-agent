@@ -3,12 +3,20 @@ import { getEnv } from '@/lib/env';
 import { HyperbolicTimeChamber } from '@/lib/ai/hyperbolicTimeChamber';
 
 export const maxDuration = 30; // Vercel timeout
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const token = searchParams.get('token');
     const env = getEnv();
+    
+    // Read authorization credentials from the Authorization header
+    const authHeader = req.headers.get('authorization');
+    let token = searchParams.get('token');
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    }
 
     // In a real cron, use a secure header or pre-shared key. 
     // For Vercel cron, we can use CRON_SECRET if configured.

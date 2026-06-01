@@ -245,21 +245,23 @@ async function handleTrade(request: Request) {
            await PortfolioManager.updatePortfolio(executionResult.updatedPortfolio);
            await PortfolioManager.logTrade(executionResult.trade);
            
-           // Record in Ledger for future reflection
-           await TradeLedger.recordTrade({
-             tradeId: executionResult.trade.id,
-             asset,
-             entryTime: new Date().toISOString(),
-             exitTime: executionResult.trade.exitTime || new Date().toISOString(),
-             regimeAtEntry: worldModel.regime,
-             aiThesis: finalDecision.thesis,
-             predictedDirection: executionResult.trade.direction || 'LONG',
-             actualPnlUsd: executionResult.trade.pnl || 0,
-             actualPnlPercent: executionResult.trade.pnlPercent || 0,
-             wasPredictionCorrect: executionResult.trade.pnl !== undefined ? executionResult.trade.pnl > 0 : true,
-             mistakesMade: [],
-             lessonsLearned: []
-           });
+           // Record in Ledger for future reflection only on exits
+           if (executionResult.trade.action === 'SELL' || executionResult.trade.action === 'COVER') {
+             await TradeLedger.recordTrade({
+               tradeId: executionResult.trade.id,
+               asset,
+               entryTime: executionResult.trade.entryTime || new Date().toISOString(),
+               exitTime: executionResult.trade.exitTime || new Date().toISOString(),
+               regimeAtEntry: worldModel.regime,
+               aiThesis: finalDecision.thesis,
+               predictedDirection: executionResult.trade.direction || 'LONG',
+               actualPnlUsd: executionResult.trade.pnl || 0,
+               actualPnlPercent: executionResult.trade.pnlPercent || 0,
+               wasPredictionCorrect: executionResult.trade.pnl !== undefined ? executionResult.trade.pnl > 0 : true,
+               mistakesMade: [],
+               lessonsLearned: []
+             });
+           }
            
            await Logger.info(`TRADE [${asset}] ${finalDecision.action} | ${executionResult.message}`);
            await TelegramService.sendTradeAlert(

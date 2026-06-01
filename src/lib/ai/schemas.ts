@@ -1,7 +1,11 @@
 import { z } from 'zod';
 
 export const brainDecisionSchema = z.object({
-  action: z.enum(['BUY', 'SELL', 'SHORT', 'COVER', 'HOLD']),
+  action: z.enum(['BUY', 'SELL', 'SHORT', 'COVER', 'HOLD', 'REQUEST_DATA']),
+  dataRequest: z.object({
+    timeframe: z.string(),
+    indicator: z.string().optional()
+  }).optional().describe("If action is REQUEST_DATA, specify what additional context you need."),
   confidence: z.number().min(0.0).max(1.0).describe("0.0 to 1.0 confidence score based on confluence. 1.0 is absolute certainty."),
   conviction: z.enum(['LOW', 'MEDIUM', 'HIGH']).describe("Qualitative conviction level"),
   thesis: z.string().describe("A concise 1-2 sentence justification for the decision"),

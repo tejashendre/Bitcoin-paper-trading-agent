@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: quant-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+
+  nextjs-daemon:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: quant-nextjs
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      # In production, change to the actual redis service name
+      - UPSTASH_REDIS_REST_URL=http://redis:6379
+      # ... other environment variables should be passed via an .env file
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  rust-sniper:
+    build:
+      context: .
+      dockerfile: Dockerfile.rust
+    container_name: quant-rust-sniper
+    environment:
+      - REDIS_URL=redis://redis:6379
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  python-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    container_name: quant-python-worker
+    # If the Python worker exposes an API
+    # ports:
+    #   - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+volumes:
+  redis_data:

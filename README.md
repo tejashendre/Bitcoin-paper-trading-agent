@@ -5,7 +5,7 @@ An enterprise-grade, autonomous high-frequency quantitative trading platform. It
 ### 🎯 System Overview
 This platform is designed to eliminate the latency, emotional bias, and single-point-of-failure rate limits typical in retail algorithmic setups by combining institutional-grade math models with a multi-feed failover data mesh.
 
-At its core, the system implements a self-correcting **Machine Learning Reflection Engine** that acts as a continuous feedback loop—reviewing its own trading history in Redis to dynamically update its indicators, while utilizing a **Parallel Multi-LLM Consensus Engine** (Gemini + Groq Llama + OpenRouter) to evaluate breakouts concurrently.
+At its core, the system implements a self-correcting **Machine Learning Reflection Engine** that acts as a continuous feedback loop—reviewing its own trading history in Redis to dynamically update its indicators, while utilizing a **Sequential Multi-LLM Failover Engine** (Gemini -> Groq Llama -> OpenRouter) for 100% reliability and cost-efficiency.
 
 ---
 
@@ -87,11 +87,11 @@ Below are the audited, live statistics recorded by the autonomous AI paper tradi
 
 ## 🚀 Key Architectural Highlights
 
-### 1. Parallel Multi-LLM Consensus Engine
-The validation layer is engineered as a true institutional-grade multi-agent consensus network:
-* **Concurrent Inference**: On a high-probability trade signal, the platform fires parallel async requests to **Google Gemini (Core)**, **Groq Llama 3.3 70B (Low Latency)**, and **OpenRouter Llama 3 (Alternative)**.
-* **Consensus Scoring**: Calculates an averaged trade confidence adjustment and concatenates their structured reasoning in your logs.
-* **Isolated rate limits**: If an individual provider encounters a rate limit (429), it automatically triggers a 5-minute Redis-based cooldown, allowing the remaining active LLMs to validate trades unblocked at their topmost potential.
+### 1. Sequential Multi-LLM Failover Engine
+The validation layer is engineered for maximum uptime and cost-efficiency:
+* **Primary Inference**: The platform targets **Google Gemini (Core)** for deep reasoning and world model evaluation.
+* **Failover Chain**: If the primary model hits a rate limit or times out, it automatically falls back sequentially to **Groq Llama 3.3 70B (Low Latency)**, and then **OpenRouter Llama 3 (Alternative)**.
+* **Isolated rate limits**: This sequential approach guarantees continuous 24/7 operation on a VPS without unnecessary API burn or concurrent blocking.
 
 ### 2. Machine Learning Self-Optimization (Reflection Engine)
 The bot routinely audits its own performance:
@@ -102,6 +102,18 @@ The bot routinely audits its own performance:
 * **Kelly Criterion**: Positions are dynamically sized based on live ledger win rates: `Kelly = W - ((1 - W) / R)`.
 * **Dynamic Equity Curve Drawdown Guard**: Reduces trade sizing by **25%, 50%, or 75%** as the portfolio moves into moderate or severe drawdowns, enforcing a hard trading halt if a 10% peak-to-trough drop is hit.
 * **Correlated Sector Caps**: Automatically scales back open altcoin positions by `35%` if highly correlated assets (like BTC) are already active.
+
+---
+
+## 🏗️ Implemented vs. Experimental Subsystems
+
+| Component | Status | Language | Description |
+| :--- | :--- | :--- | :--- |
+| **Market World Model** | **Active** | TypeScript | Ingests OHLCV and derives macro regimes, zones, and math confluence. |
+| **Reflection Engine** | **Active** | TypeScript | Post-trade analysis and dynamic parameter optimization via LLM. |
+| **Agent Cycle Service** | **Active** | TypeScript | Unified trading loop running on PM2 Daemon & Vercel API. |
+| **Python Backtester** | **Laboratory** | Python | Offline laboratory for testing multi-timeframe brain logic against 3yr historical datasets. |
+| **HFT Execution Sniper** | **Experimental** | Rust | Tokio/WebSocket engine subscribing to Redis for sub-millisecond local execution matching. |
 
 ---
 

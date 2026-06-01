@@ -58,4 +58,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-ssh-key-*.key*  
+ssh-key-*.key*  .env
+.env 
+ssh-key-2026-05-31.key 

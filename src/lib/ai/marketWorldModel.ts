@@ -30,7 +30,7 @@ import { computeStatistics } from '@/lib/statistics';
  * and sentiment into a single object the autonomous brain can reason about.
  */
 export function buildWorldModel(frame: FreeMarketFrame): MarketWorldModel {
-  const { candles, currentPrice, asset, feedHealth, sentiment, warnings: frameWarnings } = frame;
+  const { candles, currentPrice, asset, feedHealth, sentiment, warnings: frameWarnings, openInterest, fundingRate } = frame;
 
   const warnings: string[] = [...frameWarnings];
 
@@ -97,6 +97,8 @@ export function buildWorldModel(frame: FreeMarketFrame): MarketWorldModel {
   return {
     asset,
     currentPrice,
+    openInterest,
+    fundingRate,
     regime,
     directionalBias: bias,
     biasScore,

@@ -10,6 +10,6 @@ jobs:
     steps:
       - name: Trigger Autonomous Agent Cycle
         run: |
-          curl -X POST "https://ai-paper-trading-agent.vercel.app/api/agent/cycle" \
+          curl -L -X POST "https://ai-quant-trader.duckdns.org/api/agent/cycle" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json"

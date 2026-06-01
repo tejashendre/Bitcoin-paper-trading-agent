@@ -133,6 +133,28 @@ export async function GET(request: Request) {
         let aiReflection = null;
         let aiRecentJournal: any[] = [];
         
+        // Calculate detailed stats by type
+        const calculateStatsByType = (trades: any[]) => {
+            const stats = {
+                scalp: { trades: 0, wins: 0, pnl: 0 },
+                swing: { trades: 0, wins: 0, pnl: 0 }
+            };
+            
+            trades.forEach(t => {
+                const isScalp = t.action.startsWith("SCALP_");
+                const typeStr = isScalp ? 'scalp' : 'swing';
+                
+                if (t.pnl !== undefined) {
+                    stats[typeStr].trades++;
+                    stats[typeStr].pnl += t.pnl;
+                    if (t.pnl > 0) stats[typeStr].wins++;
+                }
+            });
+            return stats;
+        };
+
+        const aiDetailedStats = calculateStatsByType(aiTrades);
+
         // Only fetch sensitive AI logs/journals if NOT a spectator
         if (!isSpectator) {
             try {
@@ -149,17 +171,18 @@ export async function GET(request: Request) {
 
         return NextResponse.json({
             // User (Human) Data
-            portfolio: isSpectator ? { usd: userPortfolio.usd, balances: userPortfolio.balances, openPositions: userPortfolio.openPositions } : userPortfolio,
-            userPortfolio: isSpectator ? { usd: userPortfolio.usd, balances: userPortfolio.balances, openPositions: userPortfolio.openPositions } : userPortfolio,
+            portfolio: userPortfolio,
+            userPortfolio: userPortfolio,
             userTrades: isSpectator ? userTrades.slice(0, 10) : userTrades, // Limit trades for spectators
             userTotalValue: userSync.totalValue,
             userProfitByAsset,
 
             // AI Data
-            aiPortfolio: isSpectator ? { usd: aiPortfolio.usd, balances: aiPortfolio.balances, openPositions: aiPortfolio.openPositions, scalpPositions: aiPortfolio.scalpPositions } : aiPortfolio,
+            aiPortfolio: aiPortfolio,
             aiTrades: isSpectator ? aiTrades.slice(0, 10) : aiTrades, // Limit trades for spectators
             aiTotalValue: aiSync.totalValue,
             aiProfitByAsset,
+            aiDetailedStats,
 
             // AI Brain Intelligence (Sanitized)
             aiReflection: isSpectator ? null : aiReflection,

@@ -1,5 +1,7 @@
 import { AutonomousDecision, Portfolio, Trade, OpenPosition, MarketWorldModel } from '@/lib/types';
 import { FillSimulator } from './fillSimulator';
+import { LiveExchange } from './liveExchange';
+import { getEnv } from '@/lib/env';
 
 export class PaperExchange {
   /**
@@ -16,26 +18,58 @@ export class PaperExchange {
       return { success: false, message: decision.riskBlockReason || 'Blocked by risk governor.', updatedPortfolio: portfolio };
     }
 
-    if (decision.action === 'HOLD') {
-      return { success: true, message: 'AI decided to HOLD.', updatedPortfolio: portfolio };
+    if (decision.action === 'HOLD' || decision.action === 'REQUEST_DATA') {
+      return { success: true, message: `AI decided to ${decision.action}.`, updatedPortfolio: portfolio };
     }
 
     const { action, approvedSizeUsd, asset, riskAdjustedStopLoss, riskAdjustedTakeProfit } = decision;
     const currentPrice = worldModel.currentPrice;
     
-    // Simulate realistic fill with slippage and fees based on volatility regime
-    const simulatedFill = FillSimulator.simulateFill(
-      action,
-      currentPrice,
-      approvedSizeUsd,
-      worldModel.volatilityRegime
-    );
+    let fillPrice = 0;
+    let feeIncurredUsd = 0;
+    let liveExecutionId: string | undefined;
 
-    if (!simulatedFill.success || !simulatedFill.fillPrice) {
-      return { success: false, message: `Execution failed: ${simulatedFill.rejectionReason}`, updatedPortfolio: portfolio };
+    const env = getEnv();
+    const hasLiveKeys = !!(env.BINANCE_API_KEY || env.BYBIT_API_KEY);
+
+    if (hasLiveKeys) {
+      // ── LIVE TESTNET EXECUTION ─────────────────────────────────────
+      const amount = approvedSizeUsd / currentPrice; // approximate size
+      const targetExchange = env.BINANCE_API_KEY ? 'BINANCE' : 'BYBIT';
+      const direction = action.includes('SHORT') || action === 'COVER' ? 'SHORT' : 'LONG';
+      
+      const liveRes = await LiveExchange.executeTrade(
+        targetExchange,
+        asset,
+        direction,
+        action,
+        amount,
+        currentPrice
+      );
+
+      if (!liveRes.success) {
+        return { success: false, message: `Live Execution failed: ${liveRes.error}`, updatedPortfolio: portfolio };
+      }
+
+      fillPrice = liveRes.executedPrice || currentPrice;
+      feeIncurredUsd = liveRes.feeUsd || 0;
+      liveExecutionId = liveRes.orderId;
+    } else {
+      // ── PAPER SIMULATION ───────────────────────────────────────────
+      const simulatedFill = FillSimulator.simulateFill(
+        action,
+        currentPrice,
+        approvedSizeUsd,
+        worldModel.volatilityRegime
+      );
+
+      if (!simulatedFill.success || !simulatedFill.fillPrice) {
+        return { success: false, message: `Execution failed: ${simulatedFill.rejectionReason}`, updatedPortfolio: portfolio };
+      }
+
+      fillPrice = simulatedFill.fillPrice;
+      feeIncurredUsd = feeIncurredUsd;
     }
-
-    const fillPrice = simulatedFill.fillPrice;
     const actualUsdInvested = approvedSizeUsd;
     const amount = actualUsdInvested / fillPrice;
     const currentPosition = portfolio.openPositions?.[asset] || null;
@@ -47,10 +81,10 @@ export class PaperExchange {
     // Execute the trade state changes
     if (action === 'BUY' && !currentPosition) {
       // ── Open LONG ──────────────────────────────────────────────────────────
-      if (actualUsdInvested > portfolio.usd) {
+      if (actualUsdInvested + feeIncurredUsd > portfolio.usd) {
          return { success: false, message: `Insufficient margin for BUY`, updatedPortfolio: portfolio };
       }
-      portfolio.usd -= (actualUsdInvested + simulatedFill.feeIncurredUsd);
+      portfolio.usd -= (actualUsdInvested + feeIncurredUsd);
       if (portfolio.balances) {
         portfolio.balances[asset] = (portfolio.balances[asset] || 0) + amount;
       }
@@ -91,7 +125,7 @@ export class PaperExchange {
     } else if (action === 'SELL' && currentPosition && currentPosition.direction === 'LONG') {
       // ── Close LONG ─────────────────────────────────────────────────────────
       const proceeds = currentPosition.amount * fillPrice;
-      const netProceeds = proceeds - simulatedFill.feeIncurredUsd;
+      const netProceeds = proceeds - feeIncurredUsd;
       pnl = netProceeds - currentPosition.usdInvested;
       pnlPercent = (pnl / currentPosition.usdInvested) * 100;
 
@@ -118,6 +152,8 @@ export class PaperExchange {
         reasoning: decision.thesis,
         pnl,
         pnlPercent,
+        entryPrice: currentPosition.entryPrice,
+        entryTime: currentPosition.entryTime,
         exitPrice: fillPrice,
         exitTime: new Date().toISOString(),
         exitReason: 'SIGNAL_REVERSAL'
@@ -125,12 +161,12 @@ export class PaperExchange {
 
     } else if (action === 'SHORT' && !currentPosition) {
       // ── Open SHORT ─────────────────────────────────────────────────────────
-      if (actualUsdInvested > portfolio.usd) {
+      if (actualUsdInvested + feeIncurredUsd > portfolio.usd) {
          return { success: false, message: `Insufficient margin for SHORT`, updatedPortfolio: portfolio };
       }
       
       // Lock margin and deduct fee
-      portfolio.usd -= (actualUsdInvested + simulatedFill.feeIncurredUsd);
+      portfolio.usd -= (actualUsdInvested + feeIncurredUsd);
 
       const newPos: OpenPosition = {
         asset,
@@ -169,7 +205,7 @@ export class PaperExchange {
       // ── Close SHORT ────────────────────────────────────────────────────────
       // Profit is made when exit price is LOWER than entry price.
       const grossPnl = (currentPosition.entryPrice - fillPrice) * currentPosition.amount;
-      pnl = grossPnl - simulatedFill.feeIncurredUsd;
+      pnl = grossPnl - feeIncurredUsd;
       pnlPercent = (pnl / currentPosition.usdInvested) * 100;
 
       // Return margin + profit (or minus loss)
@@ -193,6 +229,8 @@ export class PaperExchange {
         reasoning: decision.thesis,
         pnl,
         pnlPercent,
+        entryPrice: currentPosition.entryPrice,
+        entryTime: currentPosition.entryTime,
         exitPrice: fillPrice,
         exitTime: new Date().toISOString(),
         exitReason: 'SIGNAL_REVERSAL'
@@ -235,8 +273,7 @@ export class PaperExchange {
 
     return {
       success: true,
-      message: `Order filled via PaperExchange: ${action} $${actualUsdInvested.toFixed(2)} with ${simulatedFill.quality} quality.`,
-      fillDetails: simulatedFill,
+      message: `Order filled via ${hasLiveKeys ? 'LiveExchange' : 'PaperExchange'}: ${action} $${actualUsdInvested.toFixed(2)}.`,
       updatedPortfolio: portfolio,
       trade
     };

@@ -211,6 +211,8 @@ export interface Trade {
   // Filled when position is closed:
   pnl?: number;
   pnlPercent?: number;
+  entryPrice?: number;
+  entryTime?: string;
   exitPrice?: number;
   exitTime?: string;
   exitReason?: 'STOP_LOSS' | 'TAKE_PROFIT' | 'SIGNAL_REVERSAL' | 'MANUAL' | 'SCALP_TARGET' | 'SCALP_STOP' | 'SCALP_REVERSAL';
@@ -313,6 +315,8 @@ export interface FreeMarketFrame {
   timeframe: Timeframe;
   candles: Candle[];
   currentPrice: number;
+  openInterest?: number;
+  fundingRate?: number;
   primarySource: DataSource;
   fallbackUsed: boolean;
   cacheAgeSeconds: number;
@@ -358,6 +362,8 @@ export interface PriceZone {
 export interface MarketWorldModel {
   asset: string;
   currentPrice: number;
+  openInterest?: number;           // Deep Sensor: Total open futures contracts
+  fundingRate?: number;            // Deep Sensor: Perpetual futures funding rate
   regime: MarketRegime;
   directionalBias: DirectionalBias;
   biasScore: number;               // -100 to +100 (negative = bearish)
@@ -397,7 +403,11 @@ export interface RiskGovernorLimits {
 
 /** The raw decision output from the LLM Brain. */
 export interface BrainDecision {
-  action: 'BUY' | 'SELL' | 'SHORT' | 'COVER' | 'HOLD';
+  action: 'BUY' | 'SELL' | 'SHORT' | 'COVER' | 'HOLD' | 'REQUEST_DATA';
+  dataRequest?: {
+    timeframe: string;
+    indicator?: string;
+  };
   confidence: number;            // 0.0 - 1.0
   conviction: 'LOW' | 'MEDIUM' | 'HIGH';
   thesis: string;                // The AI's justification

@@ -137,11 +137,22 @@ export async function buildMarketFrame(
 
   // ── 7. Fetch sentiment (crypto only, optional) ───────────────
   let sentiment = undefined;
-  if (includeSentiment && config.category === 'crypto') {
+  let openInterest = undefined;
+  let fundingRate = undefined;
+  
+  if (config.category === 'crypto') {
     try {
-      sentiment = await getSentiment() ?? undefined;
-    } catch {
-      // Sentiment is supplementary; don't fail the frame
+      const sensors = await MarketService.getDeepSensors(assetKey);
+      openInterest = sensors.openInterest;
+      fundingRate = sensors.fundingRate;
+    } catch {}
+    
+    if (includeSentiment) {
+      try {
+        sentiment = await getSentiment() ?? undefined;
+      } catch {
+        // Sentiment is supplementary; don't fail the frame
+      }
     }
   }
 
@@ -154,6 +165,8 @@ export async function buildMarketFrame(
     timeframe,
     candles,
     currentPrice,
+    openInterest,
+    fundingRate,
     primarySource,
     fallbackUsed,
     cacheAgeSeconds,

@@ -22,6 +22,51 @@ export const SUPPORTED_ASSETS: Record<string, AssetConfig> = {
 };
 
 export class MarketService {
+  static async getDeepSensors(assetKey: string): Promise<{ fundingRate?: number, openInterest?: number }> {
+    const config = SUPPORTED_ASSETS[assetKey];
+    if (!config || config.category !== 'crypto') return {};
+
+    const redis = getRedis();
+    const cacheKey = `cache:deep_sensors:${assetKey}`;
+    
+    try {
+      const cached = await redis.get<string>(cacheKey);
+      if (cached) {
+        return typeof cached === "string" ? JSON.parse(cached) : cached;
+      }
+    } catch {}
+
+    try {
+      const symbol = `${assetKey}USDT`;
+      
+      const [fundingRes, oiRes] = await Promise.allSettled([
+        fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`),
+        fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`)
+      ]);
+
+      const sensors: { fundingRate?: number, openInterest?: number } = {};
+
+      if (fundingRes.status === 'fulfilled' && fundingRes.value.ok) {
+        const data = await fundingRes.value.json();
+        sensors.fundingRate = parseFloat(data.lastFundingRate);
+      }
+
+      if (oiRes.status === 'fulfilled' && oiRes.value.ok) {
+        const data = await oiRes.value.json();
+        sensors.openInterest = parseFloat(data.openInterest);
+      }
+
+      if (sensors.fundingRate !== undefined || sensors.openInterest !== undefined) {
+        await redis.set(cacheKey, JSON.stringify(sensors), { ex: 300 }); // Cache for 5 mins
+      }
+
+      return sensors;
+    } catch (err) {
+      console.warn(`[MarketService] Failed to fetch deep sensors for ${assetKey}:`, err);
+      return {};
+    }
+  }
+
   private static getKrakenMinutes(timeframe: Timeframe): number {
     switch (timeframe) {
       case "1m": return 1;
@@ -201,11 +246,18 @@ export class MarketService {
 
   static async getCurrentPrice(assetKey: string = "BTC"): Promise<number> {
     const redis = getRedis();
-    const cacheKey = `cache:price:${assetKey}`;
 
+    // 1. Live WebSocket Feed (Microsecond Latency, Zero API Cost)
+    try {
+      const livePrice = await redis.get<number>(`market:live:${assetKey}`);
+      if (livePrice) return Number(livePrice);
+    } catch {}
+
+    // 2. HTTP Cache Fallback
+    const cacheKey = `cache:price:${assetKey}`;
     try {
       const cached = await redis.get<number>(cacheKey);
-      if (cached) return cached;
+      if (cached) return Number(cached);
     } catch {}
 
     const config = SUPPORTED_ASSETS[assetKey] || SUPPORTED_ASSETS.BTC;

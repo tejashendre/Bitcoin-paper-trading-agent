@@ -1,5 +1,6 @@
 import { getRedis } from '@/lib/redis';
 import { TradeJournalEntry } from '@/lib/types';
+import { SupabaseDatabase } from '@/lib/supabase';
 
 export class TradeLedger {
   private static readonly LEDGER_KEY = 'ai:trade_journal';
@@ -12,6 +13,9 @@ export class TradeLedger {
     await redis.lpush(this.LEDGER_KEY, JSON.stringify(entry));
     // Keep last 1000 trades in memory
     await redis.ltrim(this.LEDGER_KEY, 0, 999);
+
+    // Persist to Supabase in the background
+    SupabaseDatabase.insertTrade(entry).catch(console.error);
   }
 
   /**
