@@ -2,10 +2,10 @@
 
 An enterprise-grade, autonomous high-frequency quantitative trading platform. It pits a state-of-the-art **Self-Optimizing Institutional AI Consensus Engine** against a **Human Trader** on a premium, Bloomberg-style live dashboard.
 
-### 💼 Recruiter & Hiring Manager Executive Summary
-* **What Problem it Solves**: Eliminates the latency, emotional bias, and single-point-of-failure rate limits typical in retail algorithmic setups by combining institutional-grade math models with a multi-feed failover data mesh.
-* **Key Innovation**: Implements a self-correcting **Machine Learning Reflection Engine** that acts as a LangGraph-style feedback loop—reviewing its own trading history in Redis to dynamically update its indicators, and utilizing a **Parallel Multi-LLM Consensus Engine** (Gemini + Groq Llama + OpenRouter) to evaluate breakouts concurrently.
-* **Why it Matters**: Demonstrates advanced end-to-end full-stack capabilities (Next.js serverless architecture, Redis distributed state management, multi-agent consensus, real-time TA quant stacks, and dynamic risk management metrics) packaged in a production-ready repository.
+### 🎯 System Overview
+This platform is designed to eliminate the latency, emotional bias, and single-point-of-failure rate limits typical in retail algorithmic setups by combining institutional-grade math models with a multi-feed failover data mesh.
+
+At its core, the system implements a self-correcting **Machine Learning Reflection Engine** that acts as a continuous feedback loop—reviewing its own trading history in Redis to dynamically update its indicators, while utilizing a **Parallel Multi-LLM Consensus Engine** (Gemini + Groq Llama + OpenRouter) to evaluate breakouts concurrently.
 
 ---
 
@@ -18,13 +18,8 @@ You can audit the autonomous agent's trades and watch the live competition in re
 
 ---
 
-### 🖥️ Bloomberg-Style Terminal Preview
-![Bloomberg-style Dashboard Preview](public/images/dashboard_preview.png)
-
----
-
 ## 📐 Deep System Architecture
-For an in-depth dive into the underlying engineering patterns, data flows, and sub-systems, read the full **[Deep Technical Architecture Document](AUTONOMOUS_AI_PAPER_TRADING_ARCHITECTURE.md)** (41,000+ characters of rigorous system specs).
+For an in-depth dive into the underlying engineering patterns, data flows, and sub-systems, read the full **[Deep Technical Architecture Document](AUTONOMOUS_AI_PAPER_TRADING_ARCHITECTURE.md)**.
 
 ```mermaid
 graph LR
