@@ -1,8 +1,6 @@
 import { OrderFill, ExecutionQuality, SlippageEstimate, VolatilityRegime } from '@/lib/types';
 import { SlippageModel } from './slippageModel';
-
-const EXCHANGE_FEE_BPS = 0.05; // 5 basis points (0.05%)
-
+const EXCHANGE_FEE_BPS = 0.10; // 10 basis points (0.1%)
 export class FillSimulator {
   /**
    * Simulates the filling of an order, applying realistic slippage and fees.

@@ -4,11 +4,19 @@ import { Logger } from "@/lib/logger";
 import { MarketService } from "@/lib/market";
 import { ReflectionEngine } from "@/lib/memory/reflectionEngine";
 import { TradeLedger } from "@/lib/memory/tradeLedger";
+import { verifyAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
     try {
+        const authResult = verifyAuth(request);
+        if (!authResult.authorized) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        
+        const isSpectator = authResult.source === "spectator";
+
         const [userPortfolio, userTrades, aiPortfolio, aiTrades, logs] = await Promise.all([
             PortfolioManager.getPortfolio("user"),
             PortfolioManager.getTrades("user"),
@@ -124,40 +132,44 @@ export async function GET() {
         // Fetch AI Brain Intelligence Data (non-blocking, failures return nulls)
         let aiReflection = null;
         let aiRecentJournal: any[] = [];
-        try {
-            const [reflection, journal] = await Promise.all([
-                ReflectionEngine.getLatestReflection(),
-                TradeLedger.getRecentTrades(5),
-            ]);
-            aiReflection = reflection;
-            aiRecentJournal = journal;
-        } catch (e) {
-            console.error("Error fetching AI intelligence data:", e);
+        
+        // Only fetch sensitive AI logs/journals if NOT a spectator
+        if (!isSpectator) {
+            try {
+                const [reflection, journal] = await Promise.all([
+                    ReflectionEngine.getLatestReflection(),
+                    TradeLedger.getRecentTrades(5),
+                ]);
+                aiReflection = reflection;
+                aiRecentJournal = journal;
+            } catch (e) {
+                console.error("Error fetching AI intelligence data:", e);
+            }
         }
 
         return NextResponse.json({
             // User (Human) Data
-            portfolio: userPortfolio, // Left here for legacy compatibility fallback
-            userPortfolio,
-            userTrades,
+            portfolio: isSpectator ? { usd: userPortfolio.usd, balances: userPortfolio.balances, openPositions: userPortfolio.openPositions } : userPortfolio,
+            userPortfolio: isSpectator ? { usd: userPortfolio.usd, balances: userPortfolio.balances, openPositions: userPortfolio.openPositions } : userPortfolio,
+            userTrades: isSpectator ? userTrades.slice(0, 10) : userTrades, // Limit trades for spectators
             userTotalValue: userSync.totalValue,
             userProfitByAsset,
 
             // AI Data
-            aiPortfolio,
-            aiTrades,
+            aiPortfolio: isSpectator ? { usd: aiPortfolio.usd, balances: aiPortfolio.balances, openPositions: aiPortfolio.openPositions, scalpPositions: aiPortfolio.scalpPositions } : aiPortfolio,
+            aiTrades: isSpectator ? aiTrades.slice(0, 10) : aiTrades, // Limit trades for spectators
             aiTotalValue: aiSync.totalValue,
             aiProfitByAsset,
 
-            // AI Brain Intelligence
-            aiReflection,
-            aiRecentJournal,
+            // AI Brain Intelligence (Sanitized)
+            aiReflection: isSpectator ? null : aiReflection,
+            aiRecentJournal: isSpectator ? [] : aiRecentJournal,
 
             // Shared
             btcPrice,
-            totalValue: userSync.totalValue, // Left here for legacy compatibility fallback
-            profitByAsset: userProfitByAsset, // Left here for legacy compatibility fallback
-            logs
+            totalValue: userSync.totalValue,
+            profitByAsset: userProfitByAsset,
+            logs: isSpectator ? logs.slice(0, 20) : logs // Limit logs for spectators
         });
     } catch (error) {
         return NextResponse.json({ error: String(error) }, { status: 500 });

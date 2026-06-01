@@ -31,39 +31,28 @@ export interface AuthResult {
 
 export function verifyAuth(request: Request): AuthResult {
   const env = getEnv();
-
-  // 1. Check for QStash signature
-  //    NOTE: Only presence + key config is checked. Full HMAC
-  //    cryptographic verification is a recommended future improvement.
-  const qstashSignature = request.headers.get("upstash-signature");
-  if (qstashSignature) {
-    if (env.QSTASH_CURRENT_SIGNING_KEY) {
-      return { authorized: true, source: "qstash" };
-    }
-    return { authorized: false, source: "qstash", error: "QStash signing keys not configured" };
-  }
-
-  // 2. Check for Dashboard bearer token
   const authHeader = request.headers.get("authorization");
+
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const token = authHeader.slice(7);
+    
+    // Check Dashboard token
     if (token === env.DASHBOARD_SECRET) {
       return { authorized: true, source: "dashboard" };
     }
+    
+    // Check Spectator token
     if (token === "SPECTATOR" && request.method === "GET") {
       return { authorized: true, source: "spectator" };
     }
-    return { authorized: false, source: "dashboard", error: "Invalid token" };
+    
+    // Check strict CRON token
+    if (env.CRON_SECRET && token === env.CRON_SECRET) {
+      return { authorized: true, source: "cron" };
+    }
+
+    return { authorized: false, source: "auth", error: "Invalid token" };
   }
 
-  // 3. Check for Vercel Cron Header
-  //    Safe: Vercel strips this header from all external requests.
-  //    It can only be set by Vercel's internal cron infrastructure.
-  const cronHeader = request.headers.get("x-vercel-cron");
-  if (cronHeader === "1" || cronHeader === "true") {
-    return { authorized: true, source: "vercel-cron" };
-  }
-
-  // 4. No auth headers at all
   return { authorized: false, source: "none", error: "No auth provided" };
 }

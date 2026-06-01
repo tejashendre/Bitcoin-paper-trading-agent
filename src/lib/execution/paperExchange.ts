@@ -50,7 +50,7 @@ export class PaperExchange {
       if (actualUsdInvested > portfolio.usd) {
          return { success: false, message: `Insufficient margin for BUY`, updatedPortfolio: portfolio };
       }
-      portfolio.usd -= actualUsdInvested;
+      portfolio.usd -= (actualUsdInvested + simulatedFill.feeIncurredUsd);
       if (portfolio.balances) {
         portfolio.balances[asset] = (portfolio.balances[asset] || 0) + amount;
       }
@@ -91,10 +91,11 @@ export class PaperExchange {
     } else if (action === 'SELL' && currentPosition && currentPosition.direction === 'LONG') {
       // ── Close LONG ─────────────────────────────────────────────────────────
       const proceeds = currentPosition.amount * fillPrice;
-      pnl = proceeds - currentPosition.usdInvested;
+      const netProceeds = proceeds - simulatedFill.feeIncurredUsd;
+      pnl = netProceeds - currentPosition.usdInvested;
       pnlPercent = (pnl / currentPosition.usdInvested) * 100;
 
-      portfolio.usd += proceeds;
+      portfolio.usd += netProceeds;
       if (portfolio.balances) {
         portfolio.balances[asset] = Math.max(0, (portfolio.balances[asset] || 0) - currentPosition.amount);
       }
@@ -128,8 +129,8 @@ export class PaperExchange {
          return { success: false, message: `Insufficient margin for SHORT`, updatedPortfolio: portfolio };
       }
       
-      // Lock margin
-      portfolio.usd -= actualUsdInvested;
+      // Lock margin and deduct fee
+      portfolio.usd -= (actualUsdInvested + simulatedFill.feeIncurredUsd);
 
       const newPos: OpenPosition = {
         asset,
@@ -167,7 +168,8 @@ export class PaperExchange {
     } else if (action === 'COVER' && currentPosition && currentPosition.direction === 'SHORT') {
       // ── Close SHORT ────────────────────────────────────────────────────────
       // Profit is made when exit price is LOWER than entry price.
-      pnl = (currentPosition.entryPrice - fillPrice) * currentPosition.amount;
+      const grossPnl = (currentPosition.entryPrice - fillPrice) * currentPosition.amount;
+      pnl = grossPnl - simulatedFill.feeIncurredUsd;
       pnlPercent = (pnl / currentPosition.usdInvested) * 100;
 
       // Return margin + profit (or minus loss)
