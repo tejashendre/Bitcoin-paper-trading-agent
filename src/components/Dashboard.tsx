@@ -791,7 +791,10 @@ function DashboardContent({ secret }: { secret: string }) {
                     {portfolio?.totalTrades || 0} Trades
                   </span>
                 </div>
-                         {/* Active Positions Tracker */}
+              </div>
+            </div>
+
+            {/* Active Positions Tracker */}
             <div className={`border rounded-2xl p-5 space-y-4 ${bgCard}`}>
               <h2 className={`text-[10px] font-bold font-mono ${textSub} border-b ${borderCol} pb-3 uppercase tracking-wider`}>Active Market Positions</h2>
               {(() => {
